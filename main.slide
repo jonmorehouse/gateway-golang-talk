@@ -1,0 +1,267 @@
+rewriting the API Gateway in Go...
+a (true) story about metrics
+
+Jon Morehouse - someone who doesn't know how to code
+
+* Backstory: the api-gateway
+
+: mention this was done without performance in mind, just to get something
+: working and productionized spent a lot of time working on dashboards and
+: metrics
+
+: in the early versions of the gateway it was important to move fast and answer
+: problems. See which features were important and which werent. Important to
+: figure out how to provide value
+
+- rapidly prototyped
+- early questions we wanted to answer
+- onboard services quick
+- provide early value
+
+* evolving the original prototype ...
+
+- tests
+- metrics
+- important features
+
+* Consumer dashboard
+
+: we built out a solid "consumer" dashboard for our users
+
+.image images/dashboard_1.png _ 800
+
+: we then built out an internal performance dashboard to monitor things
+
+* Performance dashboard
+
+.image images/dashboard_2.png _ 700
+
+* timeouts, timeouts, timeouts
+
+: we started to see a lot of timeouts. At first we didn't even know if they
+: were gateway related or just from the upstreams themselves. Naturally, we
+: started by instrumenting more things to help our debug process.
+
+.image images/timeout_graph_1.png _ 800
+
+* debug; everything
+
+: our whole team hopped in debugging, we looked at everything
+: this was actually great, we started to get a grasp on what was meaningful and what we should monitor / instrument better
+
+- dns
+- blocking ioloop operations
+- mysql / redis ops
+- the event loop
+- network stack - tcp connect, lookup, transfer, etc
+
+* shout out to erick for prototyping solutions quickly!
+
+: shoutout to yellott for really going above and beyond on this. It was a few
+: weeks of frustrating, trial and error work
+
+: we quickly realized when we instrumented the event loop that we were doing
+: things that blocked the loop for a significant amount of time. This hadn't
+: been a problem yet because of smaller scale but was quickly showing up for us.
+: (we hadn't reached critical mass yet)
+
+: there isn't great support for async mysql / redis ops in python and investing
+: in them wasn't a huge win for us.
+
+.image images/yellott_1.png _ 400
+
+* debugging
+
+* we learned ...
+
+to instrument the runtime
+
+.image ./images/ioloop_blocked_1.png _ 900
+
+* we learned ...
+
+dns is pretty slow
+
+.image ./images/dns_latency_1.png _ 900
+
+* we learned ...
+
+can no longer use blocking sql / redis libraries
+
+.image ./images/mysql_latency_1.png _ 900
+
+* we learned ...
+
+more resources wouldn't be a long term option
+
+.image ./images/mysql_conns_1.png _ 800
+
+* conclusion
+
+this prototype isn't going to be easy to scale out
+
+.image images/sad_emoji.png _ 500
+
+* hmm ...
+
+: we all sort of knew instinctively that this is a great use of golang's
+: concurrency model. This is go's sweet spot
+
+: we started to wonder what it would take to prove this idea and what a POC
+: looked like
+
+- performance is impactful; every service is affected using it
+- we hadn't even hit critical mass yet
+- maybe python isn't the right tool
+
+.image ./images/emoji_neutral_1.png _ 400
+
+: it's also worth mentioning that we hadn't hit critical mass yet, and it was
+: hard to ask folks to partake in the gateway if it was going to slow their
+: services down
+
+* is there a better runtime for this problem?
+
+.image ./images/gopher_1.png _ 600
+
+* go
+
+- nice concurrency story
+- one of us had a little experience writing an api-gateway in go
+- this is a "sweet spot" problem
+
+.image ./images/gopher_1.png _ 600
+
+: that's the tears of joy emoji (I hope you all have been using it on slack)
+
+* how do we prototype?
+
+: I write alot of go outside of work, but this was ambitious and we hadn't done
+: much go here. It was really important to do this fast and prove this as a good
+: idea or bad idea with the least risk to the company as possible
+
+- "go build it in go" is dangerous
+- reduce risk to the org - AKA don't waste time!
+- what can we _not_ port into go?
+
+.image ./images/gopher_1.png _ 600
+
+: for us, this came down to getting the app structured and working in a VM (on rig)
+
+* 3 reasons to high five @jennifer
+
+1. helped us scope this prototype
+2. helped us roadmap this/make it legit
+3. for having awesome desk plants :plant emoji:
+
+.image ./images/jen_w_1.png _ 500
+
+: that is the "amaro" filter. Use it on instagram. Please.
+
+* did a lot of really loud typing...
+
+- got something working ...
+- proved this was no longer a crazy idea
+- timeboxed just a few working days
+
+.image ./images/gopher_2.png _ 400
+
+* metrics, metrics, metrics
+
+: We spent alot of time as a team writing metrics that were valuable to us.
+: These metrics had come from first hand production experience and gave us great
+: insight into the things we cared about
+
+: it was honestly a high bar, it was non-trivial to hit this same bar and we
+: spent a lot of time building out the right hooks to get things we care about
+: (more about this later)
+
+- had a good baseline
+- took a good amount of time; that was okay
+- turned out to be a good tradeoff
+- invested less in other things at first (tests)
+
+.image ./images/prototype_dash_1.png _ 700
+
+* I'd like to thank Will Mccutchen
+
+.image ./images/mccutchen_1.png _ 800
+
+* for PR comments like this:
+
+.image ./images/mccutchen_2.png _ 800
+
+* anyways, metrics aren't easy (in go)
+
+- intercept parts of the TCP stack (lookup, connect, transfer latencies)
+- had to build our own DNS resolver
+- new important things to monitor - heap/gc profiling
+- also still learning go as a team
+
+.image ./images/gopher_1.png _ 800
+
+* always be evolving your metrics
+
+- using tags better
+- decoupling metrics from implementations where possible
+- refactor your metrics as you refactor your code
+- metric development experience
+- write new metrics / remove unused ones
+
+.image ./images/datadog_1.png _ 500
+
+* Always be using your dashboards
+
+: its important to use your dashboards. Make sure they are useful and always be
+: tweaking them.
+
+: make sure your team finds the dashboard useful. Ask non-engineers what is
+: obvious/non-obvious
+
+: paste dashboards/graphs on pull-requests. instrumentation is part of code review
+
+- fewer tests, more instrumentation
+- broken metrics are bugs
+- how we validated the prototype
+
+.image ./images/slackbot_2.png _ 800
+
+* it took a while ... did it work?
+
+- no production downtime!
+- swapped runtimes transparently!
+- able to still move fast with new features
+
+.image ./images/firetruck_emoji_1.png _ 400
+
+* bad parts about rewriting in go
+
+: we had to figure a few things, especially in the world of rig to get this app working.
+: settings - we had to build a library for this
+: metrics - we had to build a library for this. We were able to port our previous ideas from python over, though
+: pixiedust - we had to build a whole new library for publishing to pixiedust
+
+- no internal library support
+- first rig go service
+- only the second BF service in go
+- not many folks to review/ask questions
+
+* sometimes you have to buy your boss lunch
+
+.image images/snakes_wins_1.png _ 800
+
+* good parts about rewriting in go
+
+- this was a great use of go!
+- napkin math: ~8x as much throughput as before
+- solved go problems for others! (settings, pixiedust, metrics, tests, rig)
+- we all learned, together
+
+.image ./images/gopher_1.png _ 500
+
+* Key Takeaways
+
+- prove that you need a rewrite
+- move fast; fail fast
+- only reach for go when you've exhausted python
+- rewrite as few features as possible
