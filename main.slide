@@ -1,7 +1,7 @@
 rewriting the API Gateway in Go...
 a (true) story about metrics
 
-Jon Morehouse - someone who doesn't know how to code
+Jon Morehouse
 
 * Backstory: the api-gateway
 
@@ -15,14 +15,16 @@ Jon Morehouse - someone who doesn't know how to code
 
 - rapidly prototyped
 - early questions we wanted to answer
-- onboard services quick
+- onboarded services quickly
 - provide early value
 
-* evolving the original prototype ...
+* evolving the python gateway
 
 - tests
 - metrics
-- important features
+- authentication
+- rate limiting
+- solidified http interface
 
 * Consumer dashboard
 
@@ -36,24 +38,33 @@ Jon Morehouse - someone who doesn't know how to code
 
 .image images/dashboard_2.png _ 700
 
-* timeouts, timeouts, timeouts
+* hear-no-evil-emoji 🙉  🙉
 
-: we started to see a lot of timeouts. At first we didn't even know if they
-: were gateway related or just from the upstreams themselves. Naturally, we
-: started by instrumenting more things to help our debug process.
+- 102% test coverage
+- great instrumentation
+- fun/easy/fast to work on
+- good use of tornado
+- production system that was being used
 
-.image images/timeout_graph_1.png _ 800
+.image images/hear_no_evil_1.png _ 400
+
+* Problems 🔥 🚒 🚒
+
+* unexpected timeouts 🔥🚒 🚒
+
+* poor handling of outstanding requests 🔥🚒 🚒
+
+* adding more resources didn't help 🔥🚒 🚒
 
 * debug; everything
 
 : our whole team hopped in debugging, we looked at everything
 : this was actually great, we started to get a grasp on what was meaningful and what we should monitor / instrument better
 
-- dns
-- blocking ioloop operations
-- mysql / redis ops
-- the event loop
 - network stack - tcp connect, lookup, transfer, etc
+- number of outstanding requests
+- time the event loop was blocked
+- multi processes / multi threads
 
 * shout out to erick for prototyping solutions quickly!
 
@@ -80,27 +91,30 @@ to instrument the runtime
 
 * we learned ...
 
-dns is pretty slow
+dns was having an impact!
 
 .image ./images/dns_latency_1.png _ 900
 
 * we learned ...
 
-can no longer use blocking sql / redis libraries
+that ops can magically make things better
 
-.image ./images/mysql_latency_1.png _ 900
+.image ./images/dns_improvement_pr.png _ 800
 
-* we learned ...
+* thanks ray, dan, sri and all of ops
 
-more resources wouldn't be a long term option
+.image ./images/thanks_giphy_1.png _ 800
 
-.image ./images/mysql_conns_1.png _ 800
+(that was a real giphy)
 
 * conclusion
 
-this prototype isn't going to be easy to scale out
+- we made things better
+- we spent a lot of time on this
+- had tried A LOT of things
+- we still hadn't solved the problem, though
 
-.image images/sad_emoji.png _ 500
+.image images/sad_emoji.png _ 400
 
 * hmm ...
 
@@ -110,15 +124,19 @@ this prototype isn't going to be easy to scale out
 : we started to wonder what it would take to prove this idea and what a POC
 : looked like
 
-- performance is impactful; every service is affected using it
-- we hadn't even hit critical mass yet
-- maybe python isn't the right tool
+- performance is immediately impactful
+- we were expecting more traffic over time
+- hitting runtime limitations
 
 .image ./images/emoji_neutral_1.png _ 400
 
 : it's also worth mentioning that we hadn't hit critical mass yet, and it was
 : hard to ask folks to partake in the gateway if it was going to slow their
 : services down
+
+* it might be time to re evaluate
+
+.image ./images/zero_cost_abstractions_1.png _ 1000
 
 * is there a better runtime for this problem?
 
@@ -127,7 +145,7 @@ this prototype isn't going to be easy to scale out
 * go
 
 - nice concurrency story
-- one of us had a little experience writing an api-gateway in go
+- every member of our team had experience writing go
 - this is a "sweet spot" problem
 
 .image ./images/gopher_1.png _ 600
@@ -143,6 +161,7 @@ this prototype isn't going to be easy to scale out
 - "go build it in go" is dangerous
 - reduce risk to the org - AKA don't waste time!
 - what can we _not_ port into go?
+- 1 engineer takes lead
 
 .image ./images/gopher_1.png _ 600
 
@@ -166,6 +185,10 @@ this prototype isn't going to be easy to scale out
 
 .image ./images/gopher_2.png _ 400
 
+* seriously, just get something working
+
+.image ./images/prototype_quote_1.png _ 1000
+
 * metrics, metrics, metrics
 
 : We spent alot of time as a team writing metrics that were valuable to us.
@@ -177,7 +200,7 @@ this prototype isn't going to be easy to scale out
 : (more about this later)
 
 - had a good baseline
-- took a good amount of time; that was okay
+- very detail oriented work
 - turned out to be a good tradeoff
 - invested less in other things at first (tests)
 
@@ -191,22 +214,12 @@ this prototype isn't going to be easy to scale out
 
 .image ./images/mccutchen_2.png _ 800
 
-* anyways, metrics aren't easy (in go)
-
-- intercept parts of the TCP stack (lookup, connect, transfer latencies)
-- had to build our own DNS resolver
-- new important things to monitor - heap/gc profiling
-- also still learning go as a team
-
-.image ./images/gopher_1.png _ 800
-
-* always be evolving your metrics
+* respect your metrics
 
 - using tags better
 - decoupling metrics from implementations where possible
-- refactor your metrics as you refactor your code
 - metric development experience
-- write new metrics / remove unused ones
+- make sure your metrics are useful
 
 .image ./images/datadog_1.png _ 500
 
@@ -220,11 +233,21 @@ this prototype isn't going to be easy to scale out
 
 : paste dashboards/graphs on pull-requests. instrumentation is part of code review
 
-- fewer tests, more instrumentation
+- keep your dashboards useful (for everyone)
 - broken metrics are bugs
-- how we validated the prototype
+- No metrics? Pull request not merged!!
 
 .image ./images/slackbot_2.png _ 800
+
+* evaluating the prototype
+
+- deployed as a separate service (thanks rig!)
+- duplicated dashboards
+- compared dashboards
+- replayed traffic
+- re-load tested
+
+.image ./images/load_testing_pr_1.png _ 600
 
 * it took a while ... did it work?
 
@@ -241,10 +264,10 @@ this prototype isn't going to be easy to scale out
 : metrics - we had to build a library for this. We were able to port our previous ideas from python over, though
 : pixiedust - we had to build a whole new library for publishing to pixiedust
 
-- no internal library support
 - first rig go service
 - only the second BF service in go
-- not many folks to review/ask questions
+- should have separated services earlier
+- canary deploys would've been nice
 
 * sometimes you have to buy your boss lunch
 
